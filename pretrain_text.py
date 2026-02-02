@@ -228,6 +228,8 @@ def compute_moe_metrics(model: nn.Module) -> Dict[str, float]:
 
 
 def _device() -> torch.device:
+    if torch.cuda.is_available():
+        return torch.device("cuda")
     if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
         return torch.device("mps")
     return torch.device("cpu")
@@ -286,6 +288,12 @@ def create_model(config: PretrainConfig, metadata, device: torch.device, world_s
     if config.arch.loss.name:
         model = loss_head_cls(model, **config.arch.loss.__pydantic_extra__)  # type: ignore[arg-type]
 
+    if torch.cuda.device_count() > 1:
+        print(f"Detected {torch.cuda.device_count()} GPUs. Using DataParallel.")
+        model = nn.DataParallel(model)
+    
+    model = model.to(device)
+    
     if config.load_checkpoint:
         state_dict = torch.load(config.load_checkpoint, map_location="cpu")
         model.load_state_dict(state_dict, strict=False)
@@ -542,6 +550,8 @@ def train(config: PretrainConfig, device: torch.device, rank: int, world_size: i
     if rank == 0:
         print(f"Using device: {device}")
 
+    scaler = torch.cuda.amp.GradScaler(enabled=(device.type == 'cuda'))
+    
     train_iterator = iter(train_loader)
     for step_idx in range(state.total_steps):
         batch = next(train_iterator)
@@ -558,11 +568,16 @@ def train(config: PretrainConfig, device: torch.device, rank: int, world_size: i
 
         lr_this_step = _update_learning_rates(config, state)
 
-        state.carry, loss, metrics, _, _ = state.model(carry=state.carry, batch=batch, return_keys=[])
+        # Forward pass with Autocast
+        with torch.cuda.amp.autocast(enabled=(device.type == 'cuda')):
+            state.carry, loss, metrics, _, _ = state.model(carry=state.carry, batch=batch, return_keys=[])
+            loss_to_back = loss / config.global_batch_size
 
-        (loss / config.global_batch_size).backward()
+        # Backward pass scaled
+        scaler.scale(loss_to_back).backward()
 
         if config.grad_clip_norm is not None:
+            scaler.unscale_(state.optimizers[0]) # Unscale before clipping
             torch.nn.utils.clip_grad_norm_(state.model.parameters(), config.grad_clip_norm)
 
         # Update expert biases for loss-free balancing (DeepSeek approach)
