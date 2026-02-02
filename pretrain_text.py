@@ -686,9 +686,10 @@ def main(cfg: DictConfig) -> None:
     if dist.is_available() and dist.is_initialized():
         dist.init_process_group(backend="nccl")
         rank, world_size = dist.get_rank(), dist.get_world_size()
-        print(f'Rank:{rank}, World Size:{world_size}, Device: {device}')
     else:
         rank, world_size = 0, 1
+
+    print(f'Rank:{rank}, World Size:{world_size}, Device: {device}')
 
     _seed_everything(raw_config.seed + rank)
 
