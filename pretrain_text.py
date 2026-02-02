@@ -288,9 +288,8 @@ def create_model(config: PretrainConfig, metadata, device: torch.device, world_s
     if config.arch.loss.name:
         model = loss_head_cls(model, **config.arch.loss.__pydantic_extra__)  # type: ignore[arg-type]
 
-    if torch.cuda.device_count() > 1:
-        print(f"Detected {torch.cuda.device_count()} GPUs. Using DataParallel.")
-        model = nn.DataParallel(model)
+    if dist.is_available() and dist.is_initialized():
+        print(f"Running with torchrun | rank={dist.get_rank()} world_size={dist.get_world_size()}")
     
     model = model.to(device)
     
