@@ -26,7 +26,7 @@ grad_clip_norm: 1.0
 
 project_name: trm-tinystories
 wandb_mode: online
-wandb_base_url: http://localhost:8080
+wandb_base_url: null
 
 seed: 42
-checkpoint_path: runs/checkpoints/trm_tinystories_1m
+checkpoint_path: /kaggle/working/checkpoints/trm_tinystories_1m
