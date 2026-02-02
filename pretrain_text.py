@@ -292,14 +292,6 @@ def create_model(config: PretrainConfig, metadata, device: torch.device, world_s
         print(f"Running with torchrun | rank={dist.get_rank()} world_size={dist.get_world_size()}")
     
     model = model.to(device)
-
-    if world_size > 1:
-        model = torch.nn.parallel.DistributedDataParallel(
-            model,
-            device_ids=[device.index],
-            output_device=device.index,
-            find_unused_parameters=True
-        )
     
     if config.load_checkpoint:
         state_dict = torch.load(config.load_checkpoint, map_location="cpu")
@@ -678,31 +670,24 @@ def train(config: PretrainConfig, device: torch.device, rank: int, world_size: i
         wandb_run.finish()
 
 
-@hydra.main(version_base=None, config_path="config", config_name="cfg_tinystories_1m")
-def main(cfg: DictConfig) -> None:
-    if "RANK" in os.environ:
-        rank = int(os.environ["RANK"])
-        world_size = int(os.environ["WORLD_SIZE"])
-        local_rank = int(os.environ.get("LOCAL_RANK", rank))
+@hydra.main(version_base=None, config_path="config", config_name="cfg_tinystories_1m") 
+def main(cfg: DictConfig) -> None: 
+    device = _device() 
+    
+    if dist.is_available() and dist.is_initialized(): 
+        dist.init_process_group(backend="nccl") 
+        rank, world_size = dist.get_rank(), dist.get_world_size() 
+    else: 
+        rank, world_size = 0, 1 
         
-        torch.cuda.set_device(local_rank)
-        device = torch.device(f"cuda:{local_rank}")
-
-        dist.init_process_group(backend="nccl", init_method="env://")
-    else:
-        rank, world_size = 0, 1
-        device = _device()
-
-    print(f'Rank:{rank}, World Size:{world_size}, Device: {device}')
-
-    raw_config = PretrainConfig(**OmegaConf.to_container(cfg, resolve=True))
-
-    _seed_everything(raw_config.seed + rank)
-
-    try:
-        train(raw_config, device, rank, world_size)
-    finally:
-        if dist.is_available() and dist.is_initialized():
+    print(f'Rank:{rank}, World Size:{world_size}, Device: {device}') 
+    raw_config = PretrainConfig(**OmegaConf.to_container(cfg, resolve=True)) 
+    _seed_everything(raw_config.seed + rank) 
+    
+    try: 
+        train(raw_config, device, rank, world_size) 
+    finally: 
+        if dist.is_available() and dist.is_initialized(): 
             dist.barrier()
 
 
