@@ -292,6 +292,14 @@ def create_model(config: PretrainConfig, metadata, device: torch.device, world_s
         print(f"Running with torchrun | rank={dist.get_rank()} world_size={dist.get_world_size()}")
     
     model = model.to(device)
+
+    if world_size > 1:
+        model = torch.nn.parallel.DistributedDataParallel(
+            model,
+            device_ids=[device.index],
+            output_device=device.index,
+            find_unused_parameters=True
+        )
     
     if config.load_checkpoint:
         state_dict = torch.load(config.load_checkpoint, map_location="cpu")
@@ -676,7 +684,9 @@ def main(cfg: DictConfig) -> None:
     device = _device()
 
     if dist.is_available() and dist.is_initialized():
+        dist.init_process_group(backend="nccl")
         rank, world_size = dist.get_rank(), dist.get_world_size()
+        print(f'Rank:{rank}, World Size:{world_size}, Device: {device}')
     else:
         rank, world_size = 0, 1
 
