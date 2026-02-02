@@ -588,8 +588,10 @@ def train(config: PretrainConfig, device: torch.device, rank: int, world_size: i
                         module.update_expert_bias()
 
         for optim in state.optimizers:
-            optim.step()
+            scaler.step(optim)
             optim.zero_grad()
+
+        scaler.update()
 
         # Re-project selectors after optimiser updates so logits stay in range
         with torch.no_grad():
