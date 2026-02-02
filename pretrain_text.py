@@ -549,7 +549,7 @@ def train(config: PretrainConfig, device: torch.device, rank: int, world_size: i
     if rank == 0:
         print(f"Using device: {device}")
 
-    scaler = torch.cuda.amp.GradScaler("cuda". enabled=(device.type == 'cuda'))
+    scaler = torch.cuda.amp.GradScaler("cuda", enabled=(device.type == 'cuda'))
     
     train_iterator = iter(train_loader)
     for step_idx in range(state.total_steps):
