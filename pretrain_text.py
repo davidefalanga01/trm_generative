@@ -549,7 +549,7 @@ def train(config: PretrainConfig, device: torch.device, rank: int, world_size: i
     if rank == 0:
         print(f"Using device: {device}")
 
-    scaler = torch.cuda.amp.GradScaler(enabled=(device.type == 'cuda'))
+    scaler = torch.cuda.amp.GradScaler("cuda". enabled=(device.type == 'cuda'))
     
     train_iterator = iter(train_loader)
     for step_idx in range(state.total_steps):
@@ -568,7 +568,7 @@ def train(config: PretrainConfig, device: torch.device, rank: int, world_size: i
         lr_this_step = _update_learning_rates(config, state)
 
         # Forward pass with Autocast
-        with torch.cuda.amp.autocast(enabled=(device.type == 'cuda')):
+        with torch.cuda.amp.autocast("cuda", enabled=(device.type == 'cuda')):
             state.carry, loss, metrics, _, _ = state.model(carry=state.carry, batch=batch, return_keys=[])
             loss_to_back = loss / config.global_batch_size
 
