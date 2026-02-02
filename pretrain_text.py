@@ -404,7 +404,10 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
             cumulative_count = 0.0
 
             for step in range(max_steps):
-                carry, loss, metrics, _, _ = state.model(carry=carry, batch=batch, return_keys=[])
+                with torch.cuda.amp.autocast(enabled=(device.type == 'cuda')):
+                    carry, loss, metrics, _, _ = state.model(
+                        carry=carry, batch=batch, return_keys=[]
+                    )
 
                 # Accumulate metrics - loss is already summed over batch, so normalize it
                 if loss is not None:
