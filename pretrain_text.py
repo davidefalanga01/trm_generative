@@ -680,16 +680,22 @@ def train(config: PretrainConfig, device: torch.device, rank: int, world_size: i
 
 @hydra.main(version_base=None, config_path="config", config_name="cfg_tinystories_1m")
 def main(cfg: DictConfig) -> None:
-    raw_config = PretrainConfig(**OmegaConf.to_container(cfg, resolve=True))
-    device = _device()
+    if "RANK" in os.environ:
+        rank = int(os.environ["RANK"])
+        world_size = int(os.environ["WORLD_SIZE"])
+        local_rank = int(os.environ.get("LOCAL_RANK", rank))
+        
+        torch.cuda.set_device(local_rank)
+        device = torch.device(f"cuda:{local_rank}")
 
-    if dist.is_available() and dist.is_initialized():
-        dist.init_process_group(backend="nccl")
-        rank, world_size = dist.get_rank(), dist.get_world_size()
+        dist.init_process_group(backend="nccl", init_method="env://")
     else:
         rank, world_size = 0, 1
+        device = _device()
 
     print(f'Rank:{rank}, World Size:{world_size}, Device: {device}')
+
+    raw_config = PretrainConfig(**OmegaConf.to_container(cfg, resolve=True))
 
     _seed_everything(raw_config.seed + rank)
 
