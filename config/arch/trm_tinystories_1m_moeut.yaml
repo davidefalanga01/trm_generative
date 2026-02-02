@@ -24,7 +24,7 @@ expansion: 1  # Not used when use_moeut=True
 puzzle_emb_ndim: 0
 
 pos_encodings: rope
-forward_dtype: float32
+forward_dtype: float16
 
 mlp_t: False
 puzzle_emb_len: 0
