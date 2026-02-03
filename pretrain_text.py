@@ -423,9 +423,9 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
                     state.model.tokenizer.decode(seq.tolist())
                     for seq in generated
                 ]
-    
+                print(completitions[-1], generated)
                 # 5) Ground truth testuale (da aggiungere nel dataset)
-                gt_text = batch["answer_text"]  # <-- da aggiungere al dataset nel prossimo step
+                gt_text = batch['inputs'] #batch["answer_text"]  # <-- da aggiungere al dataset nel prossimo step
     
                 # 6) Valutazione con il tuo evaluator
                 for pred, gt in zip(completions, gt_text):
