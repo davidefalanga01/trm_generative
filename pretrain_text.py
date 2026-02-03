@@ -417,10 +417,10 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
     
                     if halted:  # se ACT decide di fermarsi
                         break
-    
+                tokenizer = get_tokenizer_for_dataset("gsm8k", config.tokenizer_name)
                 # 4) Decodifica in testo
                 completions = [
-                    state.model.tokenizer.decode(seq.tolist())
+                    tokenizer.decode(seq.tolist())
                     for seq in generated
                 ]
                 print(completitions[-1], generated)
