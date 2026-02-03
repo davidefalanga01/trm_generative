@@ -384,7 +384,7 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
         evaluator = GSM8KEvaluator()
     
         # Eval dataloader (validation split)
-        eval_loader, _ = create_dataloader(config, "validation", world_size)
+        eval_loader, _ = create_dataloader(config, "test", world_size)
     
         correct = 0
         total = 0
