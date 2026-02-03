@@ -22,6 +22,7 @@ from utils.functions import get_model_source_path, load_model_class
 from text_datasets import TextDatasetConfig, create_dataset_loader
 from eval_gsm8k import GSM8KEvaluator
 from models.moeut_layers import SigmaMoE, SwitchHeadCore
+from tokenizer_configs import get_tokenizer_for_dataset
 
 
 class LossConfig(pydantic.BaseModel):
