@@ -20,6 +20,7 @@ from omegaconf import DictConfig, OmegaConf
 from models.sparse_embedding import CastedSparseEmbeddingSignSGD_Distributed
 from utils.functions import get_model_source_path, load_model_class
 from text_datasets import TextDatasetConfig, create_dataset_loader
+from eval_gsm8k import GSM8KEvaluator
 from models.moeut_layers import SigmaMoE, SwitchHeadCore
 
 
@@ -379,79 +380,146 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
         return None
 
     state.model.eval()
+    if config.dataset_name == "gsm8k":
+        evaluator = GSM8KEvaluator()
+    
+        # Eval dataloader (validation split)
+        eval_loader, _ = create_dataloader(config, "validation", world_size)
+    
+        correct = 0
+        total = 0
 
-    # Create eval dataloader
-    eval_loader, eval_metadata = create_dataloader(config, "validation", world_size)
-
-    eval_losses = []
-    eval_accuracies = []
-    eval_steps_list = []
-
-    with torch.no_grad():
-        for batch in eval_loader:
-            batch = {k: v.to(device) for k, v in batch.items()}
-            batch_size = batch["inputs"].shape[0]
-
-            # Initialize carry for eval
-            carry = state.model.initial_carry(batch)
-
-            # Run ACT loop until all sequences halt (max halt_max_steps iterations)
-            # During eval, the model runs at max steps, but we still need to loop
-            max_steps = config.arch.__pydantic_extra__.get("halt_max_steps", 4)
-
-            cumulative_loss = 0.0
-            cumulative_accuracy = 0.0
-            cumulative_count = 0.0
-
-            for step in range(max_steps):
-                with torch.cuda.amp.autocast(enabled=(device.type == 'cuda')):
-                    carry, loss, metrics, _, _ = state.model(
-                        carry=carry, batch=batch, return_keys=[]
+        max_steps = config.arch.__pydantic_extra__.get("halt_max_steps", 4)
+        max_new_tokens = 256
+    
+        with torch.no_grad():
+            for batch in eval_loader:
+                batch = {k: v.to(device) for k, v in batch.items()}
+                B, T = batch["inputs"].shape
+    
+                # 1) Inizializza carry
+                carry = state.model.initial_carry(batch)
+    
+                # 2) Buffer per generazione
+                generated = batch["inputs"].clone()
+    
+                # 3) Generazione token-per-token (greedy)
+                for _ in range(max_new_tokens):
+                    carry, _, _, outputs, halted = state.model(
+                        carry=carry,
+                        batch={"inputs": generated[:, -T:], **{k:v for k,v in batch.items() if k!="inputs"}},
+                        return_keys=["logits"],
                     )
-
-                # Accumulate metrics - loss is already summed over batch, so normalize it
-                if loss is not None:
-                    cumulative_loss += (loss.item() / config.global_batch_size)
-
-                if "accuracy" in metrics:
-                    acc = metrics["accuracy"]
-                    cumulative_accuracy += (acc.item() if torch.is_tensor(acc) else float(acc))
-
-                if "count" in metrics:
-                    cumulative_count += (metrics["count"].item() if torch.is_tensor(metrics["count"]) else float(metrics["count"]))
-                else:
-                    cumulative_count += batch_size
-
-                # Check if all sequences have halted
-                if carry.halted.all():
+    
+                    # Prendi ultimo token predetto
+                    next_token = outputs["logits"][:, -1].argmax(-1, keepdim=True)
+                    generated = torch.cat([generated, next_token], dim=1)
+    
+                    if halted:  # se ACT decide di fermarsi
+                        break
+    
+                # 4) Decodifica in testo
+                completions = [
+                    state.model.tokenizer.decode(seq.tolist())
+                    for seq in generated
+                ]
+    
+                # 5) Ground truth testuale (da aggiungere nel dataset)
+                gt_text = batch["answer_text"]  # <-- da aggiungere al dataset nel prossimo step
+    
+                # 6) Valutazione con il tuo evaluator
+                for pred, gt in zip(completions, gt_text):
+                    if evaluator.is_correct(pred, gt):
+                        correct += 1
+                    total += 1
+    
+                if total >= 10 * B:
                     break
-
-            # Average loss over ACT steps (already normalized per-token)
-            eval_losses.append(cumulative_loss / (step + 1))
-
-            if cumulative_count > 0:
-                eval_accuracies.append(cumulative_accuracy / cumulative_count)
-
-            # Limit to 10 batches for faster evaluation
-            if len(eval_losses) >= 10:
-                break
-
-    # Compute averages
-    avg_loss = sum(eval_losses) / len(eval_losses) if eval_losses else 0.0
-    avg_accuracy = sum(eval_accuracies) / len(eval_accuracies) if eval_accuracies else 0.0
-
-    eval_metrics = {
-        "eval/loss": avg_loss,
-        "eval/perplexity": math.exp(min(avg_loss, 10.0)) if avg_loss > 0 else 1.0,
-    }
-
-    if eval_accuracies:
-        eval_metrics["eval/accuracy"] = avg_accuracy
-
-    print(f"[eval] loss={avg_loss:.4f}, perplexity={eval_metrics['eval/perplexity']:.4f}, accuracy={avg_accuracy:.4f}")
-
-    state.model.train()
-    return eval_metrics
+    
+        acc = correct / max(1, total)
+    
+        eval_metrics = {
+            "eval/gsm8k_accuracy": acc,
+            "eval/samples": float(total),
+        }
+    
+        print(f"[eval] gsm8k_accuracy={acc:.4f} over {total} samples")
+    
+        state.model.train()
+        return eval_metrics
+    else:
+        # Create eval dataloader
+        eval_loader, eval_metadata = create_dataloader(config, "validation", world_size)
+    
+        eval_losses = []
+        eval_accuracies = []
+        eval_steps_list = []
+    
+        with torch.no_grad():
+            for batch in eval_loader:
+                batch = {k: v.to(device) for k, v in batch.items()}
+                batch_size = batch["inputs"].shape[0]
+    
+                # Initialize carry for eval
+                carry = state.model.initial_carry(batch)
+    
+                # Run ACT loop until all sequences halt (max halt_max_steps iterations)
+                # During eval, the model runs at max steps, but we still need to loop
+                max_steps = config.arch.__pydantic_extra__.get("halt_max_steps", 4)
+    
+                cumulative_loss = 0.0
+                cumulative_accuracy = 0.0
+                cumulative_count = 0.0
+    
+                for step in range(max_steps):
+                    with torch.cuda.amp.autocast(enabled=(device.type == 'cuda')):
+                        carry, loss, metrics, _, _ = state.model(
+                            carry=carry, batch=batch, return_keys=[]
+                        )
+    
+                    # Accumulate metrics - loss is already summed over batch, so normalize it
+                    if loss is not None:
+                        cumulative_loss += (loss.item() / config.global_batch_size)
+    
+                    if "accuracy" in metrics:
+                        acc = metrics["accuracy"]
+                        cumulative_accuracy += (acc.item() if torch.is_tensor(acc) else float(acc))
+    
+                    if "count" in metrics:
+                        cumulative_count += (metrics["count"].item() if torch.is_tensor(metrics["count"]) else float(metrics["count"]))
+                    else:
+                        cumulative_count += batch_size
+    
+                    # Check if all sequences have halted
+                    if carry.halted.all():
+                        break
+    
+                # Average loss over ACT steps (already normalized per-token)
+                eval_losses.append(cumulative_loss / (step + 1))
+    
+                if cumulative_count > 0:
+                    eval_accuracies.append(cumulative_accuracy / cumulative_count)
+    
+                # Limit to 10 batches for faster evaluation
+                if len(eval_losses) >= 10:
+                    break
+    
+        # Compute averages
+        avg_loss = sum(eval_losses) / len(eval_losses) if eval_losses else 0.0
+        avg_accuracy = sum(eval_accuracies) / len(eval_accuracies) if eval_accuracies else 0.0
+    
+        eval_metrics = {
+            "eval/loss": avg_loss,
+            "eval/perplexity": math.exp(min(avg_loss, 10.0)) if avg_loss > 0 else 1.0,
+        }
+    
+        if eval_accuracies:
+            eval_metrics["eval/accuracy"] = avg_accuracy
+    
+        print(f"[eval] loss={avg_loss:.4f}, perplexity={eval_metrics['eval/perplexity']:.4f}, accuracy={avg_accuracy:.4f}")
+    
+        state.model.train()
+        return eval_metrics
 
 
 def save_checkpoint(config: PretrainConfig, state: TrainState, rank: int, config_dict: Dict[str, Any]) -> None:
