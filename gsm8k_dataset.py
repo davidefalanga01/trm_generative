@@ -77,9 +77,6 @@ class GSM8KDataset(IterableDataset):
             if len(answer_ids) > remaining:
                 # Truncate answer
                 answer_ids = answer_ids[:self.config.max_answer]
-
-        print(f"Tokenized Prompt IDs: {len(prompt_ids)} tokens")
-        print(f"Tokenized Answer IDs: {len(answer_ids)} tokens")
         
         # Labels: -100 on prompt tokens, value on answer tokens
         combined_ids = prompt_ids + answer_ids
