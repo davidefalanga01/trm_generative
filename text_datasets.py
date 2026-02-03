@@ -7,6 +7,7 @@ import torch
 from torch.utils.data import DataLoader
 
 from tinystories_dataset import TinyStoriesDataset, TinyStoriesDatasetConfig, TextDatasetMetadata
+from gsm8k_dataset import GSM8KDataset, GSM8KDatasetConfig, TextDatasetMetadata
 
 
 @dataclass
@@ -23,27 +24,39 @@ class TextDatasetConfig:
 
 
 def create_dataset_loader(config: TextDatasetConfig, split: str = "train") -> Tuple[DataLoader, TextDatasetMetadata]:
-    """Build the TinyStories dataloader and metadata bundle."""
-    if config.dataset_name != "tinystories":
-        raise ValueError(f"Unsupported dataset '{config.dataset_name}'. Only 'tinystories' is available.")
-
+    """Build the dataloader and metadata bundle."""        
     max_stories = config.max_sequences_per_epoch
     # When training with max_sequences, cap per-replica stories to avoid hanging streaming iterators.
     if max_stories is None and hasattr(config, "max_sequences_override") and config.max_sequences_override is not None:
         max_stories = config.max_sequences_override
-
-    dataset = TinyStoriesDataset(
-        TinyStoriesDatasetConfig(
+        
+    if config.dataset_name == "tinystories":
+        dataset = TinyStoriesDataset(
+            TinyStoriesDatasetConfig(
+                seed=config.seed,
+                seq_len=config.seq_len,
+                batch_size=config.batch_size,
+                streaming=config.streaming,
+                max_stories=max_stories,
+                tokenizer_name=config.tokenizer_name,
+                cache_dir=config.data_path,
+            ),
+            split=split,
+        )
+    elif config.dataset_name == "gsm8k":
+        dataset = GSM8KDataset(
+        GSM8KDatasetConfig(
             seed=config.seed,
             seq_len=config.seq_len,
             batch_size=config.batch_size,
             streaming=config.streaming,
-            max_stories=max_stories,
             tokenizer_name=config.tokenizer_name,
             cache_dir=config.data_path,
         ),
         split=split,
     )
+    else:
+        raise ValueError(f"Unsupported dataset '{config.dataset_name}'. Only 'tinystories' or 'gsm8k' is available.")
 
     dataloader = DataLoader(
         dataset,
