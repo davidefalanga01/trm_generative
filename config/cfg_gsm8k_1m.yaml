@@ -1,0 +1,32 @@
+defaults:
+  - arch: trm_gsm8k_1m
+  - _self_
+
+hydra:
+  output_subdir: null
+
+dataset_name: gsm8k
+data_path: data/hf/gsm8k
+tokenizer_name: gpt-neo-10k
+streaming: false
+
+seq_len: 512
+global_batch_size: 32
+max_sequences: 2100000 
+
+eval_interval_sequences: 10000
+
+lr: 1e-4
+lr_min_ratio: 0.01
+lr_warmup_percent: 0.02
+weight_decay: 0.0
+beta1: 0.9
+beta2: 0.95
+grad_clip_norm: 1.0
+
+project_name: trm-gsm8k
+wandb_mode: online
+wandb_base_url: null
+
+seed: 42
+checkpoint_path: /kaggle/working/checkpoints/trm_gsm8k_1m
