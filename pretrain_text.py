@@ -632,7 +632,7 @@ def train(config: PretrainConfig, device: torch.device, rank: int, world_size: i
         batch_size = batch["inputs"].shape[0]
         state.sequences_consumed += batch_size * world_size
 
-        batch = {k: v.to(device) for k, v in batch.items()}
+        batch = {k: (v.to(device) if torch.is_tensor(v) else v) for k, v in batch.items()}
 
         if state.carry is None:
             state.carry = state.model.initial_carry(batch)  # type: ignore[call-arg]
