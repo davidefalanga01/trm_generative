@@ -430,7 +430,7 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
                 ]
 
                 # Debug
-                print(f"DEBUG - Prompt end: ...{tokenizer.decode(batch["inputs"].tolist())}")
+                print(f"DEBUG - Prompt end: ...{tokenizer.decode(batch["inputs"][0].tolist())}")
                 print(f"DEBUG - Generated: {completions[0]}")
                 print(f"DEBUG - GT: {answer_text[0]}")
     
