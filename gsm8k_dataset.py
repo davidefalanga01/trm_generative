@@ -97,6 +97,7 @@ class GSM8KDataset(IterableDataset):
         #     dataset_iter = self.dataset.shuffle(seed=self.config.seed + self._epoch, buffer_size=2500)
         # else:
         #     dataset_iter = self.dataset
+        dataset_iter = self.dataset
 
         batch_inputs = []
         batch_labels = []
