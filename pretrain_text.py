@@ -406,7 +406,7 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
                 print(tokenizer.decode(batch["inputs"][0].tolist())[:200])
                 
                 print("\n--- ANSWER TEXT (primo esempio) ---")
-                print(answer_text[0])
+                print(batch["answer_text"][0])
                 print("====================================\n")
                 answer_text = batch.pop("answer_text")
                 batch = {k: v.to(device) for k, v in batch.items()}
