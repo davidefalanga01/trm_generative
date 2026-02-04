@@ -395,7 +395,8 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
     
         with torch.no_grad():
             for batch in eval_loader:
-                batch = {k: (v.to(device) if torch.is_tensor(v) else v) for k, v in batch.items()}
+                answer_text = batch.pop("answer_text")
+                batch = {k: v.to(device) for k, v in batch.items()}
                 B, T = batch["inputs"].shape
     
                 # 1) Inizializza carry
@@ -426,7 +427,7 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
                 ]
                 print(completions[-1], generated)
                 # 5) Ground truth testuale (da aggiungere nel dataset)
-                gt_text = batch["answer_text"]  # <-- da aggiungere al dataset nel prossimo step
+                gt_text = answer_text 
     
                 # 6) Valutazione con il tuo evaluator
                 for pred, gt in zip(completions, gt_text):
@@ -632,7 +633,8 @@ def train(config: PretrainConfig, device: torch.device, rank: int, world_size: i
         batch_size = batch["inputs"].shape[0]
         state.sequences_consumed += batch_size * world_size
 
-        batch = {k: (v.to(device) if torch.is_tensor(v) else v) for k, v in batch.items()}
+        answer_text = batch.pop("answer_text")
+        batch = {k: v.to(device) for k, v in batch.items()}
 
         if state.carry is None:
             state.carry = state.model.initial_carry(batch)  # type: ignore[call-arg]
