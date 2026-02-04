@@ -427,22 +427,6 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
                     # Prendi il prossimo token
                     next_token = outputs["logits"][:, -1].argmax(-1, keepdim=True)
                     
-                    # Gestione fine generazione (Batch-wise)
-                    # Se halted_tensor è un booleano globale, questa logica va adattata,
-                    # ma per efficienza dovrebbe essere un tensore (B, 1) o (B,)
-                    if isinstance(halted_tensor, torch.Tensor):
-                        # Aggiorna chi ha finito
-                        has_halted_now = halted_tensor.reshape(B).bool()
-                        finished_mask = finished_mask | has_halted_now
-                        
-                        # Se un sample ha finito, sostituisci il token generato con PAD (es. 0)
-                        # così non sporchiamo l'output, oppure continua a generare ma ignoralo dopo.
-                        # Qui sovrascriviamo con token 0 se finito (opzionale)
-                        next_token = torch.where(finished_mask.view(B, 1), torch.tensor(0, device=device), next_token)
-                    
-                    # Aggiungi alla lista dei generati
-                    generated_tokens = torch.cat([generated_tokens, next_token], dim=1)
-                    
                     # Aggiorna input per il prossimo passo
                     current_input = next_token
 
