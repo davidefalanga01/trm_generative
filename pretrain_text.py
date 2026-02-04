@@ -396,6 +396,18 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
     
         with torch.no_grad():
             for batch in eval_loader:
+                # ====== DEBUG 1: ALLINEAMENTO DATI ======
+                print("\n=== NEW BATCH ===")
+                print("BATCH KEYS:", batch.keys())
+                print("INPUT SHAPE:", batch["inputs"].shape)
+                
+                # Mostra SOLO l'inizio del primo esempio del batch (evita wall of text)
+                print("\n--- INPUT (primi 200 caratteri) ---")
+                print(tokenizer.decode(batch["inputs"][0].tolist())[:200])
+                
+                print("\n--- ANSWER TEXT (primo esempio) ---")
+                print(answer_text[0])
+                print("====================================\n")
                 answer_text = batch.pop("answer_text")
                 batch = {k: v.to(device) for k, v in batch.items()}
                 B, input_len = batch["inputs"].shape
