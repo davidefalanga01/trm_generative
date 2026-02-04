@@ -383,50 +383,86 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
     state.model.eval()
     if config.dataset_name == "gsm8k":
         evaluator = GSM8KEvaluator()
+        tokenizer = get_tokenizer_for_dataset("gsm8k", config.tokenizer_name)
     
         # Eval dataloader (validation split)
         eval_loader, _ = create_dataloader(config, "test", world_size)
     
         correct = 0
         total = 0
-
-        max_steps = config.arch.__pydantic_extra__.get("halt_max_steps", 4)
         max_new_tokens = 256
     
         with torch.no_grad():
             for batch in eval_loader:
                 answer_text = batch.pop("answer_text")
                 batch = {k: v.to(device) for k, v in batch.items()}
-                B, T = batch["inputs"].shape
+                B, input_len = batch["inputs"].shape
     
                 # 1) Inizializza carry
                 carry = state.model.initial_carry(batch)
     
                 # 2) Buffer per generazione
-                generated = batch["inputs"].clone()
-    
-                # 3) Generazione token-per-token (greedy)
+                generated_tokens = torch.zeros((B, 0), dtype=torch.long, device=device)
+                
+                # Ultimo token del prompt è l'input iniziale per la generazione
+                current_input = input_ids[:, -1:] 
+
+                # Maschera per chi ha finito (False = sta ancora generando)
+                finished_mask = torch.zeros(B, dtype=torch.bool, device=device)
+
+                # 2) Ciclo di Generazione
                 for _ in range(max_new_tokens):
-                    carry, _, _, outputs, halted = state.model(
+                    # Prepara il batch per il singolo step (SOLO ultimo token)
+                    step_batch = {
+                        "inputs": current_input,
+                        **{k: v for k, v in batch.items() if k != "inputs"}
+                    }
+
+                    carry, _, _, outputs, halted_tensor = state.model(
                         carry=carry,
-                        batch={"inputs": generated[:, -T:], **{k:v for k,v in batch.items() if k!="inputs"}},
+                        batch=step_batch,
                         return_keys=["logits"],
                     )
     
-                    # Prendi ultimo token predetto
+                    # Prendi il prossimo token
                     next_token = outputs["logits"][:, -1].argmax(-1, keepdim=True)
-                    generated = torch.cat([generated, next_token], dim=1)
-    
-                    if halted:  # se ACT decide di fermarsi
+                    
+                    # Gestione fine generazione (Batch-wise)
+                    # Se halted_tensor è un booleano globale, questa logica va adattata,
+                    # ma per efficienza dovrebbe essere un tensore (B, 1) o (B,)
+                    if isinstance(halted_tensor, torch.Tensor):
+                        # Aggiorna chi ha finito
+                        has_halted_now = halted_tensor.reshape(B).bool()
+                        finished_mask = finished_mask | has_halted_now
+                        
+                        # Se un sample ha finito, sostituisci il token generato con PAD (es. 0)
+                        # così non sporchiamo l'output, oppure continua a generare ma ignoralo dopo.
+                        # Qui sovrascriviamo con token 0 se finito (opzionale)
+                        next_token = torch.where(finished_mask.view(B, 1), torch.tensor(0, device=device), next_token)
+                    
+                    # Aggiungi alla lista dei generati
+                    generated_tokens = torch.cat([generated_tokens, next_token], dim=1)
+                    
+                    # Aggiorna input per il prossimo passo
+                    current_input = next_token
+
+                    # Se TUTTI hanno finito, esci
+                    if finished_mask.all():
                         break
-                tokenizer = get_tokenizer_for_dataset("gsm8k", config.tokenizer_name)
-                # 4) Decodifica in testo
+
+                # 3) Decodifica e Valutazione
+                # Decodifichiamo SOLO la parte generata, non il prompt.
+                # Questo aiuta l'evaluator a non confondersi con i numeri nella domanda.
                 completions = [
-                    tokenizer.decode(seq.tolist())
-                    for seq in generated
+                    tokenizer.decode(seq.tolist(), skip_special_tokens=True)
+                    for seq in generated_tokens
                 ]
-                print(completions[-1], generated)
-                # 5) Ground truth testuale (da aggiungere nel dataset)
+                
+                # Debug
+                print(f"DEBUG - Prompt end: ...{tokenizer.decode(input_ids[0, -10:].tolist())}")
+                print(f"DEBUG - Generated: {completions[0]}")
+                print(f"DEBUG - GT: {answer_text[0]}")
+                
                 gt_text = answer_text 
     
                 # 6) Valutazione con il tuo evaluator
