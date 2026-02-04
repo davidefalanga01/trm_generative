@@ -100,9 +100,12 @@ class GSM8KDataset(IterableDataset):
 
         batch_inputs = []
         batch_labels = []
+        batch_answers = []
 
         for item in dataset_iter:
             q, a = item["question"], item["answer"]
+            
+            batch_answers.append(a)
             
             input_ids, labels = self._tokenize_example(q, a)
             
@@ -115,6 +118,7 @@ class GSM8KDataset(IterableDataset):
                     "labels": torch.from_numpy(np.stack(batch_labels)).long(),
                     "dataset_ids": torch.zeros(self.config.batch_size, dtype=torch.long),
                     "puzzle_identifiers": torch.zeros(self.config.batch_size, dtype=torch.long),
+                    "answer_text": batch_answers,
                 }
                 batch_inputs, batch_labels = [], []
 
@@ -124,4 +128,5 @@ class GSM8KDataset(IterableDataset):
                 "labels": torch.from_numpy(np.stack(batch_labels)).long(),
                 "dataset_ids": torch.zeros(len(batch_inputs), dtype=torch.long),
                 "puzzle_identifiers": torch.zeros(len(batch_inputs), dtype=torch.long),
+                "answer_text": batch_answers,
             }
