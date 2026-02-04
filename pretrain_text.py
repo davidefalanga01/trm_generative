@@ -405,7 +405,7 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
                 generated_tokens = torch.zeros((B, 0), dtype=torch.long, device=device)
                 
                 # Ultimo token del prompt è l'input iniziale per la generazione
-                current_input = input_ids[:, -1:] 
+                current_input = batch["inputs"][:, -1:] 
 
                 # Maschera per chi ha finito (False = sta ancora generando)
                 finished_mask = torch.zeros(B, dtype=torch.bool, device=device)
@@ -459,14 +459,12 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
                 ]
                 
                 # Debug
-                print(f"DEBUG - Prompt end: ...{tokenizer.decode(input_ids[0, -10:].tolist())}")
+                print(f"DEBUG - Prompt end: ...{tokenizer.decode(batch["inputs"][0, -10:].tolist())}")
                 print(f"DEBUG - Generated: {completions[0]}")
                 print(f"DEBUG - GT: {answer_text[0]}")
-                
-                gt_text = answer_text 
     
                 # 6) Valutazione con il tuo evaluator
-                for pred, gt in zip(completions, gt_text):
+                for pred, gt in zip(completions, answer_text):
                     if evaluator.is_correct(pred, gt):
                         correct += 1
                     total += 1
@@ -669,7 +667,8 @@ def train(config: PretrainConfig, device: torch.device, rank: int, world_size: i
         batch_size = batch["inputs"].shape[0]
         state.sequences_consumed += batch_size * world_size
 
-        answer_text = batch.pop("answer_text")
+        if config.dataset_name == "gsm8k":
+            answer_text = batch.pop("answer_text")
         batch = {k: v.to(device) for k, v in batch.items()}
 
         if state.carry is None:
