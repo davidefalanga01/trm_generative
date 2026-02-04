@@ -426,7 +426,7 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
                 # Questo aiuta l'evaluator a non confondersi con i numeri nella domanda.
                 completions = [
                     tokenizer.decode(seq.tolist())
-                    for seq in generated_tokens
+                    for seq in generated
                 ]
 
                 # Debug
