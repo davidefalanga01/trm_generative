@@ -92,11 +92,11 @@ class GSM8KDataset(IterableDataset):
 
     def __iter__(self):
         self._epoch += 1
-        # Shuffling for streaming dataset
-        if self.config.streaming:
-            dataset_iter = self.dataset.shuffle(seed=self.config.seed + self._epoch, buffer_size=2500)
-        else:
-            dataset_iter = self.dataset
+        # # Shuffling for streaming dataset
+        # if self.config.streaming:
+        #     dataset_iter = self.dataset.shuffle(seed=self.config.seed + self._epoch, buffer_size=2500)
+        # else:
+        #     dataset_iter = self.dataset
 
         batch_inputs = []
         batch_labels = []
