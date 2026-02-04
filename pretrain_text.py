@@ -417,7 +417,7 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
     
                 # 2) Buffer per generazione
                 generated = batch["inputs"].clone()
-                print("STARTING PROMPT:", generated)
+                print("STARTING PROMPT:", generated[0])
                 # 3) Generazione token-per-token (greedy)
                 for _ in range(max_new_tokens):
                     carry, _, _, outputs, halted = state.model(
