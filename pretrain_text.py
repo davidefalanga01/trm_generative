@@ -410,7 +410,7 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
                 for _ in range(max_new_tokens):
                     carry, _, _, outputs, halted = state.model(
                         carry=carry,
-                        batch={"inputs": generated[:, -input_len:], **{k:v for k,v in batch.items() if k!="inputs"}},,
+                        batch={"inputs": generated[:, -input_len:], **{k:v for k,v in batch.items() if k!="inputs"}},
                         return_keys=["logits"],
                     )
     
