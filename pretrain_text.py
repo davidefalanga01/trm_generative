@@ -390,6 +390,8 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
     
         correct = 0
         total = 0
+        
+        max_steps = config.arch.__pydantic_extra__.get("halt_max_steps", 4)
         max_new_tokens = 256
     
         with torch.no_grad():
@@ -402,48 +404,33 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
                 carry = state.model.initial_carry(batch)
     
                 # 2) Buffer per generazione
-                generated_tokens = torch.zeros((B, 0), dtype=torch.long, device=device)
+                generated = batch["inputs"].clone()
                 
-                # Ultimo token del prompt è l'input iniziale per la generazione
-                current_input = batch["inputs"][:, -1:] 
-
-                # Maschera per chi ha finito (False = sta ancora generando)
-                finished_mask = torch.zeros(B, dtype=torch.bool, device=device)
-
-                # 2) Ciclo di Generazione
+                # 3) Generazione token-per-token (greedy)
                 for _ in range(max_new_tokens):
-                    # Prepara il batch per il singolo step (SOLO ultimo token)
-                    step_batch = {
-                        "inputs": current_input,
-                        **{k: v for k, v in batch.items() if k != "inputs"}
-                    }
-
-                    carry, _, _, outputs, halted_tensor = state.model(
+                    carry, _, _, outputs, halted = state.model(
                         carry=carry,
-                        batch=step_batch,
+                        batch={"inputs": generated[:, -input_len:], **{k:v for k,v in batch.items() if k!="inputs"}},,
                         return_keys=["logits"],
                     )
     
                     # Prendi il prossimo token
                     next_token = outputs["logits"][:, -1].argmax(-1, keepdim=True)
-                    
-                    # Aggiorna input per il prossimo passo
-                    current_input = next_token
-
-                    # Se TUTTI hanno finito, esci
-                    if finished_mask.all():
+                    generated = torch.cat([generated, next_token], dim=1)
+    
+                    if halted:  # se ACT decide di fermarsi
                         break
 
                 # 3) Decodifica e Valutazione
                 # Decodifichiamo SOLO la parte generata, non il prompt.
                 # Questo aiuta l'evaluator a non confondersi con i numeri nella domanda.
                 completions = [
-                    tokenizer.decode(seq.tolist(), skip_special_tokens=True)
+                    tokenizer.decode(seq.tolist())
                     for seq in generated_tokens
                 ]
-                
+
                 # Debug
-                print(f"DEBUG - Prompt end: ...{tokenizer.decode(batch["inputs"][0, -10:].tolist())}")
+                print(f"DEBUG - Prompt end: ...{tokenizer.decode(batch["inputs"].tolist())}")
                 print(f"DEBUG - Generated: {completions[0]}")
                 print(f"DEBUG - GT: {answer_text[0]}")
     
