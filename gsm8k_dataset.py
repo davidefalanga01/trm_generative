@@ -121,7 +121,7 @@ class GSM8KDataset(IterableDataset):
                     "puzzle_identifiers": torch.zeros(self.config.batch_size, dtype=torch.long),
                     "answer_text": batch_answers,
                 }
-                batch_inputs, batch_labels = [], []
+                batch_inputs, batch_labels, batch_answers = [], [], []
 
         if batch_inputs:
             yield {
