@@ -405,7 +405,7 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
     
                 # 2) Buffer per generazione
                 generated = batch["inputs"].clone()
-                
+                print("STARTING PROMPT:", generated)
                 # 3) Generazione token-per-token (greedy)
                 for _ in range(max_new_tokens):
                     carry, _, _, outputs, halted = state.model(
@@ -418,8 +418,8 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
                     next_token = outputs["logits"][:, -1].argmax(-1, keepdim=True)
                     generated = torch.cat([generated, next_token], dim=1)
     
-                    if halted:  # se ACT decide di fermarsi
-                        break
+                    # if halted:  # se ACT decide di fermarsi
+                    #     break
 
                 # 3) Decodifica e Valutazione
                 # Decodifichiamo SOLO la parte generata, non il prompt.
