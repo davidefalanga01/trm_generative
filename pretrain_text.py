@@ -395,7 +395,7 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
     
         with torch.no_grad():
             for batch in eval_loader:
-                batch = {k: v.to(device) for k, v in batch.items()}
+                batch = {k: (v.to(device) if torch.is_tensor(v) else v) for k, v in batch.items()}
                 B, T = batch["inputs"].shape
     
                 # 1) Inizializza carry
