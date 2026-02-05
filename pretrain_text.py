@@ -627,6 +627,10 @@ def _setup_wandb(config: PretrainConfig, rank: int, config_dict: Dict[str, Any],
 
 def train(config: PretrainConfig, device: torch.device, rank: int, world_size: int):
     train_loader, metadata = create_dataloader(config, "train", world_size)
+    # DEBUG PRINT
+    sample = next(iter(train_loader))
+    print("A SAMPLE AFTER DATASET CREATION", sample)
+    
     state = init_train_state(config, metadata, device, world_size)
 
     wandb_run = _setup_wandb(config, rank, config.model_dump(), state.model)
