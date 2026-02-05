@@ -443,8 +443,10 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
 
                 # Debug
                 print(f"DEBUG - Prompt end: ...{tokenizer.decode(batch["inputs"][0].tolist())}")
+                print("\nDEBUG--- Tokens Q + A:", batch["inputs"][0])
                 print(f"DEBUG - Generated: {completions[0]}")
                 print(f"DEBUG - GT: {answer_text[0]}")
+                print("\nDEBUG--- Tokens label:", batch["labels"][0])
     
                 # 6) Valutazione con il tuo evaluator
                 for pred, gt in zip(completions, answer_text):
