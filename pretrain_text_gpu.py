@@ -442,7 +442,6 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
                     # Cut the prompt at the '?' token
                     cut_idx = (generated[0] == 30).nonzero(as_tuple=True)[0].item()  
                     generated = generated[:, :cut_idx+1]  
-                    print("STARTING PROMPT TRUNCATED:", generated[0])
                     
                     batch["inputs"] = generated
                     B, input_len = batch["inputs"].shape
@@ -450,7 +449,8 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
                     carry = raw_model.initial_carry(batch)
                     
                     # Token-by-token generation
-                    for _ in range(max_new_tokens):
+                    for i in range(max_new_tokens):
+                        print(f'{i}-th new token')
                         carry, _, _, outputs, halted = state.model(
                             carry=carry,
                             batch={"inputs": generated[:, -1:], **{k:v for k,v in batch.items() if (k!="inputs") and (k!="labels")}},
@@ -472,10 +472,8 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
     
                     # Debug
                     print(f"DEBUG - Prompt end: ...{tokenizer.decode(batch['inputs'][0].tolist())}")
-                    print("\nDEBUG--- Tokens Q + A:", batch["inputs"][0])
                     print(f"DEBUG - Generated: {completions[0]}")
                     print(f"DEBUG - GT: {answer_text[0]}")
-                    print("\nDEBUG--- Tokens label:", batch["labels"][0])
         
                     for pred, gt in zip(completions, answer_text):
                         if evaluator.is_correct(pred, gt):
