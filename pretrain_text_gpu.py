@@ -397,89 +397,93 @@ def _log_metrics(rank: int, metrics: Dict[str, float], extra: Dict[str, float], 
 
 def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.device, rank: int, world_size: int) -> Optional[Dict[str, float]]:
     """Run evaluation on validation split."""
-    if rank != 0:
-        return None
+    if dist.is_available() and dist.is_initialized():
+        dist.barrier()
 
     state.model.eval()
-    raw_model = get_raw_model(state.model) # Unwrap DDP for custom methods
-
-    if config.dataset_name == "gsm8k":
-        evaluator = GSM8KEvaluator()
-        tokenizer = get_tokenizer_for_dataset("gsm8k", config.tokenizer_name)
     
-        # Eval dataloader (validation split)
-        eval_loader, _ = create_dataloader(config, "test", world_size)
-    
-        correct = 0
-        total = 0
+    if rank == 0:
+        print(f"[eval] Starting evaluation on Rank {rank}...")
         
-        max_steps = config.arch.__pydantic_extra__.get("halt_max_steps", 4)
-        max_new_tokens = 256
+        raw_model = get_raw_model(state.model) # Unwrap DDP for custom methods
     
-        with torch.no_grad():
-            for batch in eval_loader:
-                # ====== DEBUG 1: ALLINEAMENTO DATI ======
-                print("\n=== NEW BATCH ===")
-                print("BATCH KEYS:", batch.keys())
-                print("INPUT SHAPE:", batch["inputs"].shape)
-                
-                print("\n--- INPUT (first 200 chars) ---")
-                print(tokenizer.decode(batch["inputs"][0].tolist())[:200])
-                
-                print("\n--- ANSWER TEXT (sample) ---")
-                print(batch["answer_text"][0])
-                print("====================================\n")
-                answer_text = batch.pop("answer_text")
-                batch = {k: v.to(device) for k, v in batch.items()}
+        if config.dataset_name == "gsm8k":
+            evaluator = GSM8KEvaluator()
+            tokenizer = get_tokenizer_for_dataset("gsm8k", config.tokenizer_name)
+        
+            # Eval dataloader (validation split)
+            eval_loader, _ = create_dataloader(config, "test", world_size)
+        
+            correct = 0
+            total = 0
+            
+            max_steps = config.arch.__pydantic_extra__.get("halt_max_steps", 4)
+            max_new_tokens = 256
+        
+            with torch.no_grad():
+                for batch in eval_loader:
+                    # ====== DEBUG 1: ALLINEAMENTO DATI ======
+                    print("\n=== NEW BATCH ===")
+                    print("BATCH KEYS:", batch.keys())
+                    print("INPUT SHAPE:", batch["inputs"].shape)
+                    
+                    print("\n--- INPUT (first 200 chars) ---")
+                    print(tokenizer.decode(batch["inputs"][0].tolist())[:200])
+                    
+                    print("\n--- ANSWER TEXT (sample) ---")
+                    print(batch["answer_text"][0])
+                    print("====================================\n")
+                    answer_text = batch.pop("answer_text")
+                    batch = {k: v.to(device) for k, v in batch.items()}
+        
+                    # Starting point for generation: Question...?Answer...
+                    generated = batch["inputs"].clone()
     
-                # Starting point for generation: Question...?Answer...
-                generated = batch["inputs"].clone()
-
-                # Cut the prompt at the '?' token
-                cut_idx = (generated[0] == 30).nonzero(as_tuple=True)[0].item()  
-                generated = generated[:, :cut_idx+1]  
-                print("STARTING PROMPT TRUNCATED:", generated[0])
-                
-                batch["inputs"] = generated
-                B, input_len = batch["inputs"].shape
+                    # Cut the prompt at the '?' token
+                    cut_idx = (generated[0] == 30).nonzero(as_tuple=True)[0].item()  
+                    generated = generated[:, :cut_idx+1]  
+                    print("STARTING PROMPT TRUNCATED:", generated[0])
+                    
+                    batch["inputs"] = generated
+                    B, input_len = batch["inputs"].shape
+        
+                    carry = raw_model.initial_carry(batch)
+                    
+                    # Token-by-token generation
+                    for _ in range(max_new_tokens):
+                        carry, _, _, outputs, halted = state.model(
+                            carry=carry,
+                            batch={"inputs": generated[:, -1:], **{k:v for k,v in batch.items() if (k!="inputs") and (k!="labels")}},
+                            return_keys=["logits"],
+                        )
+        
+                        # Take the next token
+                        next_token = outputs["logits"][:, -1].argmax(-1, keepdim=True)
+                        generated = torch.cat([generated, next_token], dim=1)
+        
+                        # if halted:  # se ACT decide di fermarsi
+                        #      break
     
-                carry = raw_model.initial_carry(batch)
-                
-                # Token-by-token generation
-                for _ in range(max_new_tokens):
-                    carry, _, _, outputs, halted = state.model(
-                        carry=carry,
-                        batch={"inputs": generated[:, -1:], **{k:v for k,v in batch.items() if (k!="inputs") and (k!="labels")}},
-                        return_keys=["logits"],
-                    )
+                    # 3) Decode and evaluate
+                    completions = [
+                        tokenizer.decode(seq.tolist())
+                        for seq in generated
+                    ]
     
-                    # Take the next token
-                    next_token = outputs["logits"][:, -1].argmax(-1, keepdim=True)
-                    generated = torch.cat([generated, next_token], dim=1)
-    
-                    # if halted:  # se ACT decide di fermarsi
-                    #      break
-
-                # 3) Decode and evaluate
-                completions = [
-                    tokenizer.decode(seq.tolist())
-                    for seq in generated
-                ]
-
-                # Debug
-                print(f"DEBUG - Prompt end: ...{tokenizer.decode(batch['inputs'][0].tolist())}")
-                print("\nDEBUG--- Tokens Q + A:", batch["inputs"][0])
-                print(f"DEBUG - Generated: {completions[0]}")
-                print(f"DEBUG - GT: {answer_text[0]}")
-                print("\nDEBUG--- Tokens label:", batch["labels"][0])
-    
-                for pred, gt in zip(completions, answer_text):
-                    if evaluator.is_correct(pred, gt):
-                        correct += 1
-                    total += 1
-    
-                if total >= 10 * B:
-                    break
+                    # Debug
+                    print(f"DEBUG - Prompt end: ...{tokenizer.decode(batch['inputs'][0].tolist())}")
+                    print("\nDEBUG--- Tokens Q + A:", batch["inputs"][0])
+                    print(f"DEBUG - Generated: {completions[0]}")
+                    print(f"DEBUG - GT: {answer_text[0]}")
+                    print("\nDEBUG--- Tokens label:", batch["labels"][0])
+        
+                    for pred, gt in zip(completions, answer_text):
+                        if evaluator.is_correct(pred, gt):
+                            correct += 1
+                        total += 1
+        
+                    if total >= 10 * B:
+                        break
     
         acc = correct / max(1, total)
     
@@ -491,7 +495,13 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
         print(f"[eval] gsm8k_accuracy={acc:.4f} over {total} samples")
     
         state.model.train()
-        return eval_metrics
+
+        if dist.is_available() and dist.is_initialized():
+            dist.barrier()
+        
+        if rank == 0:
+            return eval_metrics
+        return None
     else:
         # Create eval dataloader
         eval_loader, eval_metadata = create_dataloader(config, "validation", world_size)
