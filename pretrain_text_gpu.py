@@ -423,24 +423,27 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
                 print("BATCH KEYS:", batch.keys())
                 print("INPUT SHAPE:", batch["inputs"].shape)
                 
-                # Mostra SOLO l'inizio del primo esempio del batch (evita wall of text)
-                print("\n--- INPUT (primi 200 caratteri) ---")
+                print("\n--- INPUT (first 200 chars) ---")
                 print(tokenizer.decode(batch["inputs"][0].tolist())[:200])
                 
-                print("\n--- ANSWER TEXT (primo esempio) ---")
+                print("\n--- ANSWER TEXT (sample) ---")
                 print(batch["answer_text"][0])
                 print("====================================\n")
                 answer_text = batch.pop("answer_text")
                 batch = {k: v.to(device) for k, v in batch.items()}
                 B, input_len = batch["inputs"].shape
     
-                # 1) Inizializza carry via raw_model
                 carry = raw_model.initial_carry(batch)
     
-                # 2) Buffer per generazione
+                # Starting point for generation: Question...?
                 generated = batch["inputs"].clone()
-                print("STARTING PROMPT:", generated[0])
-                # 3) Generazione token-per-token (greedy)
+
+                # Cut the prompt until the '?' token
+                cut_idx = (generated[0] == 30).nonzero(as_tuple=True)[0].item()  
+                generated = generated[:, :cut_idx+1]  
+                print("STARTING PROMPT TRUNCATED:", generated[0])
+                
+                # Token-by-token generation
                 for _ in range(max_new_tokens):
                     carry, _, _, outputs, halted = state.model(
                         carry=carry,
@@ -448,16 +451,14 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
                         return_keys=["logits"],
                     )
     
-                    # Prendi il prossimo token
+                    # Take the next token
                     next_token = outputs["logits"][:, -1].argmax(-1, keepdim=True)
                     generated = torch.cat([generated, next_token], dim=1)
     
                     # if halted:  # se ACT decide di fermarsi
                     #      break
 
-                # 3) Decodifica e Valutazione
-                # Decodifichiamo SOLO la parte generata, non il prompt.
-                # Questo aiuta l'evaluator a non confondersi con i numeri nella domanda.
+                # 3) Decode and evaluate
                 completions = [
                     tokenizer.decode(seq.tolist())
                     for seq in generated
@@ -470,7 +471,6 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
                 print(f"DEBUG - GT: {answer_text[0]}")
                 print("\nDEBUG--- Tokens label:", batch["labels"][0])
     
-                # 6) Valutazione con il tuo evaluator
                 for pred, gt in zip(completions, answer_text):
                     if evaluator.is_correct(pred, gt):
                         correct += 1
