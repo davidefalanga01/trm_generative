@@ -431,17 +431,19 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
                 print("====================================\n")
                 answer_text = batch.pop("answer_text")
                 batch = {k: v.to(device) for k, v in batch.items()}
-                B, input_len = batch["inputs"].shape
     
-                carry = raw_model.initial_carry(batch)
-    
-                # Starting point for generation: Question...?
+                # Starting point for generation: Question...?Answer...
                 generated = batch["inputs"].clone()
 
-                # Cut the prompt until the '?' token
+                # Cut the prompt at the '?' token
                 cut_idx = (generated[0] == 30).nonzero(as_tuple=True)[0].item()  
                 generated = generated[:, :cut_idx+1]  
                 print("STARTING PROMPT TRUNCATED:", generated[0])
+                
+                batch["inputs"] = generated
+                B, input_len = batch["inputs"].shape
+    
+                carry = raw_model.initial_carry(batch)
                 
                 # Token-by-token generation
                 for _ in range(max_new_tokens):
