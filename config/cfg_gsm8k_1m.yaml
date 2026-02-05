@@ -7,7 +7,7 @@ hydra:
 
 dataset_name: gsm8k
 data_path: data/hf/gsm8k
-tokenizer_name: gpt-neo-10k
+tokenizer_name: gpt-neo-125M
 streaming: false
 
 seq_len: 512
