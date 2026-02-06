@@ -482,11 +482,23 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
                 if total >= 10 * B:
                     break
 
-        acc = correct / max(1, total)
+        if dist.is_available() and dist.is_initialized():
+            stats = torch.tensor([local_correct, local_total], device=device, dtype=torch.float32)
+            dist.all_reduce(stats, op=dist.ReduceOp.SUM)
+            global_correct = int(stats[0].item())
+            global_total = int(stats[1].item())
+        else:
+            global_correct = local_correct
+            global_total = local_total
 
+        acc = global_correct / max(1, global_total)
+        
+        if rank == 0:
+            print(f"[eval] gsm8k_accuracy={acc:.4f} over {global_total} samples")
+            
         eval_metrics = {
            "eval/gsm8k_accuracy": acc,
-            "eval/samples": float(total),
+            "eval/samples": float(global_total),
         }
 
         print(f"[eval] gsm8k_accuracy={acc:.4f} over {total} samples")
