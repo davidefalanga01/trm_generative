@@ -424,7 +424,6 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
                 for batch in eval_loader:
                     # ====== DEBUG 1: ALLINEAMENTO DATI ======
                     print("\n=== NEW BATCH ===")
-                    print("BATCH KEYS:", batch.keys())
                     print("INPUT SHAPE:", batch["inputs"].shape)
                     
                     print("\n--- INPUT  ---")
@@ -456,11 +455,11 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
                             batch={"inputs": generated[:, -1:], **{k:v for k,v in batch.items() if (k!="inputs") and (k!="labels")}},
                             return_keys=["logits"],
                         )
-        
+                        print(f'logits generated')
                         # Take the next token
                         next_token = outputs["logits"][:, -1].argmax(-1, keepdim=True)
                         generated = torch.cat([generated, next_token], dim=1)
-        
+                        print(f'{i}-th new token added')
                         # if halted:  # se ACT decide di fermarsi
                         #      break
     
