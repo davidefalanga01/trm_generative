@@ -85,7 +85,7 @@ class GSM8KDataset(IterableDataset):
         # Padding
         pad_len = self.config.seq_len - len(combined_ids)
         if pad_len > 0:
-            combined_ids += [self.tokenizer.eos_token] * pad_len
+            combined_ids += [self.tokenizer.pad_token_id] * pad_len
             labels += [-100] * pad_len
             
         return np.array(combined_ids, dtype=np.int32), np.array(labels, dtype=np.int32)
