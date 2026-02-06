@@ -30,3 +30,4 @@ wandb_base_url: null
 
 seed: 42
 checkpoint_path: /kaggle/working/checkpoints/trm_gsm8k_1m
+checkpoint_interval_sequences: 2500
