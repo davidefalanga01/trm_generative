@@ -26,6 +26,14 @@ DEFAULT_PROMPTS: List[str] = [
     "Once upon a time, there was a queen who wanted to relax",
 ]
 
+DEFAULT_QUESTIONS: List[str] = [
+    "Janet’s ducks lay 16 eggs per day. She eats three for breakfast every morning and bakes muffins for her friends every day with four. She sells the remainder at the farmers' market daily for $2 per fresh duck egg. How much in dollars does she make every day at the farmers' market?",
+    "A robe takes 2 bolts of blue fiber and half that much white fiber. How many bolts in total does it take?",
+    "Josh decides to try flipping a house. He buys a house for $80,000 and then puts in $50,000 in repairs. This increased the value of the house by 150%. How much profit did he make?", 
+    "James decides to run 3 sprints 3 times a week. He runs 60 meters each sprint. How many total meters does he run a week?",
+    "Eliza's rate per hour for the first 40 hours she works each week is $10. She also receives an overtime pay of 1.2 times her regular hourly rate. If Eliza worked for 45 hours this week, how much are her earnings for this week?"
+]
+
 
 def _select_device(name: Optional[str]) -> torch.device:
     if name is not None and name != "auto":
@@ -221,7 +229,7 @@ def main():
 
     args = parser.parse_args()
 
-    prompts = list(DEFAULT_PROMPTS)
+    prompts = list(DEFAULT_QUESTIONS)
     seeds = args.seeds if args.seeds is not None else list(range(len(prompts)))
     if len(seeds) != len(prompts):
         raise ValueError(f"Number of seeds ({len(seeds)}) must match prompts ({len(prompts)})")
