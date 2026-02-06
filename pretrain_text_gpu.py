@@ -402,173 +402,171 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
 
     state.model.eval()
     
-    if rank == 0:
-        print(f"[eval] Starting evaluation on Rank {rank}...")
-        
-        raw_model = get_raw_model(state.model) # Unwrap DDP for custom methods
     
-        if config.dataset_name == "gsm8k":
-            evaluator = GSM8KEvaluator()
-            tokenizer = get_tokenizer_for_dataset("gsm8k", config.tokenizer_name)
-        
-            # Eval dataloader (validation split)
-            eval_loader, _ = create_dataloader(config, "test", world_size=1)
-        
-            correct = 0
-            total = 0
-            
-            max_steps = config.arch.__pydantic_extra__.get("halt_max_steps", 4)
-            max_new_tokens = 256
-        
-            with torch.no_grad():
-                for batch in eval_loader:
-                    # ====== DEBUG 1: ALLINEAMENTO DATI ======
-                    print("\n=== NEW BATCH ===")
-                    print("INPUT SHAPE:", batch["inputs"].shape)
-                    
-                    print("\n--- INPUT  ---")
-                    print(tokenizer.decode(batch["inputs"][0].tolist()))
-                    
-                    print("\n--- ANSWER TEXT (sample) ---")
-                    print(batch["answer_text"][0])
-                    print("====================================\n")
-                    answer_text = batch.pop("answer_text")
-                    batch = {k: v.to(device) for k, v in batch.items()}
-        
-                    # Starting point for generation: Question...?Answer...
-                    generated = batch["inputs"].clone()
+    print(f"[eval] Starting evaluation on Rank {rank}...")
     
-                    # Cut the prompt at the '?' token
-                    cut_idx = (generated[0] == 30).nonzero(as_tuple=True)[0].item()  
-                    generated = generated[:, :cut_idx+1]  
-                    
-                    batch["inputs"] = generated
-                    B, input_len = batch["inputs"].shape
-        
-                    carry = raw_model.initial_carry(batch)
-                    
-                    # Token-by-token generation
-                    for i in range(max_new_tokens):
-                        print(f'{i}-th new token')
-                        carry, _, _, outputs, halted = raw_model(
-                            carry=carry,
-                            batch={"inputs": generated[:, -1:], **{k:v for k,v in batch.items() if (k!="inputs") and (k!="labels")}},
-                            return_keys=["logits"],
-                        )
-                        print(f'logits generated')
-                        # Take the next token
-                        next_token = outputs["logits"][:, -1].argmax(-1, keepdim=True)
-                        generated = torch.cat([generated, next_token], dim=1)
-                        print(f'{i}-th new token added')
-                        # if halted:  # se ACT decide di fermarsi
-                        #      break
-    
-                    # 3) Decode and evaluate
-                    completions = [
-                        tokenizer.decode(seq.tolist())
-                        for seq in generated
-                    ]
-    
-                    # Debug
-                    print(f"DEBUG - Prompt end: ...{tokenizer.decode(batch['inputs'][0].tolist())}")
-                    print(f"DEBUG - Generated: {completions[0]}")
-                    print(f"DEBUG - GT: {answer_text[0]}")
-        
-                    for pred, gt in zip(completions, answer_text):
-                        if evaluator.is_correct(pred, gt):
-                            correct += 1
-                        total += 1
-        
-                    if total >= 10 * B:
-                        break
-    
-            acc = correct / max(1, total)
-    
-            eval_metrics = {
-               "eval/gsm8k_accuracy": acc,
-                "eval/samples": float(total),
-            }
-    
-            print(f"[eval] gsm8k_accuracy={acc:.4f} over {total} samples")
-        else:
-            # Create eval dataloader
-            eval_loader, eval_metadata = create_dataloader(config, "validation", world_size=1)
-        
-            eval_losses = []
-            eval_accuracies = []
-            eval_steps_list = []
-        
-            with torch.no_grad():
-                for batch in eval_loader:
-                    batch = {k: v.to(device) for k, v in batch.items()}
-                    batch_size = batch["inputs"].shape[0]
-        
-                    # Initialize carry for eval
-                    carry = raw_model.initial_carry(batch)
-        
-                    # Run ACT loop until all sequences halt (max halt_max_steps iterations)
-                    # During eval, the model runs at max steps, but we still need to loop
-                    max_steps = config.arch.__pydantic_extra__.get("halt_max_steps", 4)
-        
-                    cumulative_loss = 0.0
-                    cumulative_accuracy = 0.0
-                    cumulative_count = 0.0
-        
-                    for step in range(max_steps):
-                        with torch.cuda.amp.autocast(enabled=(device.type == 'cuda')):
-                            carry, loss, metrics, _, _ = state.model(
-                                carry=carry, batch=batch, return_keys=[]
-                            )
-        
-                        # Accumulate metrics - loss is already summed over batch, so normalize it
-                        if loss is not None:
-                            cumulative_loss += (loss.item() / config.global_batch_size)
-        
-                        if "accuracy" in metrics:
-                            acc = metrics["accuracy"]
-                            cumulative_accuracy += (acc.item() if torch.is_tensor(acc) else float(acc))
-        
-                        if "count" in metrics:
-                            cumulative_count += (metrics["count"].item() if torch.is_tensor(metrics["count"]) else float(metrics["count"]))
-                        else:
-                            cumulative_count += batch_size
-        
-                        # Check if all sequences have halted
-                        if carry.halted.all():
-                            break
-        
-                    # Average loss over ACT steps (already normalized per-token)
-                    eval_losses.append(cumulative_loss / (step + 1))
-        
-                    if cumulative_count > 0:
-                        eval_accuracies.append(cumulative_accuracy / cumulative_count)
-        
-                    # Limit to 10 batches for faster evaluation
-                    if len(eval_losses) >= 10:
-                        break
-        
-            # Compute averages
-            avg_loss = sum(eval_losses) / len(eval_losses) if eval_losses else 0.0
-            avg_accuracy = sum(eval_accuracies) / len(eval_accuracies) if eval_accuracies else 0.0
-        
-            eval_metrics = {
-                "eval/loss": avg_loss,
-                "eval/perplexity": math.exp(min(avg_loss, 10.0)) if avg_loss > 0 else 1.0,
-            }
-        
-            if eval_accuracies:
-                eval_metrics["eval/accuracy"] = avg_accuracy
-        
-            print(f"[eval] loss={avg_loss:.4f}, perplexity={eval_metrics['eval/perplexity']:.4f}, accuracy={avg_accuracy:.4f}")
-            state.model.train()
+    raw_model = get_raw_model(state.model) # Unwrap DDP for custom methods
 
-        if dist.is_available() and dist.is_initialized():
-            dist.barrier()
+    if config.dataset_name == "gsm8k":
+        evaluator = GSM8KEvaluator()
+        tokenizer = get_tokenizer_for_dataset("gsm8k", config.tokenizer_name)
+    
+        # Eval dataloader (validation split)
+        eval_loader, _ = create_dataloader(config, "test", world_size)
+    
+        correct = 0
+        total = 0
         
-        return eval_metrics
-        
+        max_steps = config.arch.__pydantic_extra__.get("halt_max_steps", 4)
+        max_new_tokens = 256
+    
+        with torch.no_grad():
+            for batch in eval_loader:
+                # ====== DEBUG 1: ALLINEAMENTO DATI ======
+                print("\n=== NEW BATCH ===")
+                print("INPUT SHAPE:", batch["inputs"].shape)
+                
+                print("\n--- INPUT  ---")
+                print(tokenizer.decode(batch["inputs"][0].tolist()))
+                
+                print("\n--- ANSWER TEXT (sample) ---")
+                print(batch["answer_text"][0])
+                print("====================================\n")
+                answer_text = batch.pop("answer_text")
+                batch = {k: v.to(device) for k, v in batch.items()}
+    
+                # Starting point for generation: Question...?Answer...
+                generated = batch["inputs"].clone()
+
+                # Cut the prompt at the '?' token
+                cut_idx = (generated[0] == 30).nonzero(as_tuple=True)[0].item()  
+                generated = generated[:, :cut_idx+1]  
+                
+                batch["inputs"] = generated
+                B, input_len = batch["inputs"].shape
+    
+                carry = raw_model.initial_carry(batch)
+                
+                # Token-by-token generation
+                for i in range(max_new_tokens):
+                    print(f'{i}-th new token')
+                    carry, _, _, outputs, halted = raw_model(
+                        carry=carry,
+                        batch={"inputs": generated[:, -1:], **{k:v for k,v in batch.items() if (k!="inputs") and (k!="labels")}},
+                        return_keys=["logits"],
+                    )
+                    print(f'logits generated')
+                    # Take the next token
+                    next_token = outputs["logits"][:, -1].argmax(-1, keepdim=True)
+                    generated = torch.cat([generated, next_token], dim=1)
+                    print(f'{i}-th new token added')
+                    # if halted:  # se ACT decide di fermarsi
+                    #      break
+
+                # 3) Decode and evaluate
+                completions = [
+                    tokenizer.decode(seq.tolist())
+                    for seq in generated
+                ]
+
+                # Debug
+                print(f"DEBUG - Prompt end: ...{tokenizer.decode(batch['inputs'][0].tolist())}")
+                print(f"DEBUG - Generated: {completions[0]}")
+                print(f"DEBUG - GT: {answer_text[0]}")
+    
+                for pred, gt in zip(completions, answer_text):
+                    if evaluator.is_correct(pred, gt):
+                        correct += 1
+                    total += 1
+    
+                if total >= 10 * B:
+                    break
+
+        acc = correct / max(1, total)
+
+        eval_metrics = {
+           "eval/gsm8k_accuracy": acc,
+            "eval/samples": float(total),
+        }
+
+        print(f"[eval] gsm8k_accuracy={acc:.4f} over {total} samples")
     else:
-        return None
+        # Create eval dataloader
+        eval_loader, eval_metadata = create_dataloader(config, "validation", world_size)
+    
+        eval_losses = []
+        eval_accuracies = []
+        eval_steps_list = []
+    
+        with torch.no_grad():
+            for batch in eval_loader:
+                batch = {k: v.to(device) for k, v in batch.items()}
+                batch_size = batch["inputs"].shape[0]
+    
+                # Initialize carry for eval
+                carry = raw_model.initial_carry(batch)
+    
+                # Run ACT loop until all sequences halt (max halt_max_steps iterations)
+                # During eval, the model runs at max steps, but we still need to loop
+                max_steps = config.arch.__pydantic_extra__.get("halt_max_steps", 4)
+    
+                cumulative_loss = 0.0
+                cumulative_accuracy = 0.0
+                cumulative_count = 0.0
+    
+                for step in range(max_steps):
+                    with torch.cuda.amp.autocast(enabled=(device.type == 'cuda')):
+                        carry, loss, metrics, _, _ = state.model(
+                            carry=carry, batch=batch, return_keys=[]
+                        )
+    
+                    # Accumulate metrics - loss is already summed over batch, so normalize it
+                    if loss is not None:
+                        cumulative_loss += (loss.item() / config.global_batch_size)
+    
+                    if "accuracy" in metrics:
+                        acc = metrics["accuracy"]
+                        cumulative_accuracy += (acc.item() if torch.is_tensor(acc) else float(acc))
+    
+                    if "count" in metrics:
+                        cumulative_count += (metrics["count"].item() if torch.is_tensor(metrics["count"]) else float(metrics["count"]))
+                    else:
+                        cumulative_count += batch_size
+    
+                    # Check if all sequences have halted
+                    if carry.halted.all():
+                        break
+    
+                # Average loss over ACT steps (already normalized per-token)
+                eval_losses.append(cumulative_loss / (step + 1))
+    
+                if cumulative_count > 0:
+                    eval_accuracies.append(cumulative_accuracy / cumulative_count)
+    
+                # Limit to 10 batches for faster evaluation
+                if len(eval_losses) >= 10:
+                    break
+    
+        # Compute averages
+        avg_loss = sum(eval_losses) / len(eval_losses) if eval_losses else 0.0
+        avg_accuracy = sum(eval_accuracies) / len(eval_accuracies) if eval_accuracies else 0.0
+    
+        eval_metrics = {
+            "eval/loss": avg_loss,
+            "eval/perplexity": math.exp(min(avg_loss, 10.0)) if avg_loss > 0 else 1.0,
+        }
+    
+        if eval_accuracies:
+            eval_metrics["eval/accuracy"] = avg_accuracy
+    
+        print(f"[eval] loss={avg_loss:.4f}, perplexity={eval_metrics['eval/perplexity']:.4f}, accuracy={avg_accuracy:.4f}")
+    
+    state.model.train()
+
+    if dist.is_available() and dist.is_initialized():
+        dist.barrier()
+    
+    return eval_metrics
 
 
 def save_checkpoint(config: PretrainConfig, state: TrainState, rank: int, config_dict: Dict[str, Any]) -> None:
