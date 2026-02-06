@@ -672,8 +672,7 @@ def train(config: PretrainConfig, device: torch.device, rank: int, world_size: i
     # Using iter/next safely for distributed debug, only print on rank 0 if possible or accept duplicate logs
     if rank == 0:
         sample = next(iter(train_loader))
-        print("A SAMPLE AFTER DATASET CREATION")
-        print("SHAPES:", sample["inputs"].shape, sample["labels"].shape, sample["dataset_ids"].shape, sample["puzzle_identifiers"].shape, sample["answer_text"].shape)
+        print("A SAMPLE AFTER DATASET CREATION", sample["inputs"].shape, sample["labels"].shape, sample["dataset_ids"].shape, sample["puzzle_identifiers"].shape, sample["answer_text"].shape)
     
     state = init_train_state(config, metadata, device, world_size, local_rank)
 
