@@ -450,7 +450,7 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
                     # Token-by-token generation
                     for i in range(max_new_tokens):
                         print(f'{i}-th new token')
-                        carry, _, _, outputs, halted = state.model(
+                        carry, _, _, outputs, halted = raw_model(
                             carry=carry,
                             batch={"inputs": generated[:, -1:], **{k:v for k,v in batch.items() if (k!="inputs") and (k!="labels")}},
                             return_keys=["logits"],
