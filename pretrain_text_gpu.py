@@ -421,7 +421,7 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
 
     with torch.no_grad():
         for batch in eval_loader:
-            batch = {k: v.to(device) for k, v in batch.items()}
+            batch = {k: v.to(device) for k, v in batch.items() if k!="answer_text"}
             batch_size = batch["inputs"].shape[0]
 
             # Initialize carry for eval
