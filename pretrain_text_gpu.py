@@ -17,6 +17,7 @@ import wandb
 import coolname
 import pydantic
 from omegaconf import DictConfig, OmegaConf
+from datasets import load_dataset
 
 from models.sparse_embedding import CastedSparseEmbeddingSignSGD_Distributed
 from utils.functions import get_model_source_path, load_model_class
