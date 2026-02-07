@@ -509,7 +509,7 @@ def run_gsm8k_eval(config: PretrainConfig, state: TrainState, device: torch.devi
             "test", 
             split="test", 
             streaming=config.streaming,
-            cache_dir=config.cache_dir
+            cache_dir="data/hf/gsm8k"
         )
 
     correct = 0
