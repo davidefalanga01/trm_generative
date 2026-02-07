@@ -24,6 +24,7 @@ from text_datasets import TextDatasetConfig, create_dataset_loader
 from eval_gsm8k import GSM8KEvaluator
 from models.moeut_layers import SigmaMoE, SwitchHeadCore
 from tokenizer_configs import get_tokenizer_for_dataset
+from generate_asnwers import generate_answers
 
 
 class LossConfig(pydantic.BaseModel):
@@ -502,21 +503,29 @@ def run_gsm8k_eval(config: PretrainConfig, state: TrainState, device: torch.devi
     evaluator = GSM8KEvaluator()
     tokenizer = get_tokenizer_for_dataset("gsm8k", config.tokenizer_name)
 
+    val_set = load_dataset(
+            "openai/gsm8k", 
+            "test", 
+            split=self.split, 
+            streaming=config.streaming,
+            cache_dir=config.cache_dir
+        )
+
     correct = 0
     total = 0
 
     max_new_tokens = 256
     max_samples = 10
 
-    for question, gt in zip(questions, answers):
-        completion = generate_gsm8k_answer(
-            raw_model, tokenizer, question,
+    for sample in valset:
+        completion = generate_answers(
+            raw_model, tokenizer, sample["question"],
             max_new_tokens=256,
             temperature=0.0,
             top_k=0,
             device=device,
         )
-        if evaluator.is_correct(completion, gt):
+        if evaluator.is_correct(completion, sample["answer"]):
             correct += 1
         total += 1
 
@@ -763,7 +772,7 @@ def train(config: PretrainConfig, device: torch.device, rank: int, world_size: i
                 save_checkpoint(config, state, rank, config.model_dump())
 
     if config.dataset_name == "gsm8k":
-        run_gsm8k_eval(config, state, device, rank, world_size)
+        _ = run_gsm8k_eval(config, state, device, rank, world_size)
         
     # Save final checkpoint
     save_checkpoint(config, state, rank, config.model_dump())
