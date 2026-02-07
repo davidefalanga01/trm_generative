@@ -97,7 +97,7 @@ def _load_model(checkpoint_path: Path, device: torch.device):
     return model, tokenizer, config_dict
 
 
-def generate_story(
+def generate_answers(
     model,
     tokenizer,
     prompt: str,
@@ -106,7 +106,7 @@ def generate_story(
     top_k: int,
     device: torch.device,
 ) -> str:
-    """Generate a single story from a prompt."""
+    """Generate a single answer from a prompt."""
 
     prompt = f"Question: {prompt}\nAnswer:"
   
