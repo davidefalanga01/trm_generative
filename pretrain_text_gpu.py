@@ -529,6 +529,11 @@ def run_gsm8k_eval(config: PretrainConfig, state: TrainState, device: torch.devi
         if evaluator.is_correct(completion, sample["answer"]):
             correct += 1
         total += 1
+        
+        print(f"Generated: {completion} \n GT: {sample["answer"]}")
+        
+        if total >= max_samples:
+            break
 
     if dist.is_available() and dist.is_initialized():
         stats = torch.tensor(
