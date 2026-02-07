@@ -507,7 +507,7 @@ def run_gsm8k_eval(config: PretrainConfig, state: TrainState, device: torch.devi
     val_set = load_dataset(
             "openai/gsm8k", 
             "test", 
-            split=self.split, 
+            split="test", 
             streaming=config.streaming,
             cache_dir=config.cache_dir
         )
