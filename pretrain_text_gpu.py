@@ -489,6 +489,61 @@ def run_evaluation(config: PretrainConfig, state: TrainState, device: torch.devi
     
     return eval_metrics
 
+def run_gsm8k_eval(config: PretrainConfig, state: TrainState, device: torch.device, rank: int, world_size: int):
+    """Run specific evaluation for GSM8K based on exact matching"""
+    if dist.is_available() and dist.is_initialized():
+        dist.barrier()
+
+    state.model.eval()
+
+    print(f"[eval] Starting evaluation of generation for GSM8K...")
+    
+    raw_model = get_raw_model(state.model) 
+    evaluator = GSM8KEvaluator()
+    tokenizer = get_tokenizer_for_dataset("gsm8k", config.tokenizer_name)
+
+    correct = 0
+    total = 0
+
+    max_new_tokens = 256
+    max_samples = 10
+
+    for question, gt in zip(questions, answers):
+        completion = generate_gsm8k_answer(
+            raw_model, tokenizer, question,
+            max_new_tokens=256,
+            temperature=0.0,
+            top_k=0,
+            device=device,
+        )
+        if evaluator.is_correct(completion, gt):
+            correct += 1
+        total += 1
+
+    if dist.is_available() and dist.is_initialized():
+        stats = torch.tensor(
+            [correct, total], device=device, dtype=torch.float32
+        )
+        dist.all_reduce(stats, op=dist.ReduceOp.SUM)
+        global_correct = int(stats[0].item())
+        global_total = int(stats[1].item())
+    else:
+        global_correct = correct
+        global_total = total
+
+    acc = global_correct / max(1, global_total)
+
+    if rank == 0:
+        print(
+            f"[eval] gsm8k_accuracy={acc:.4f} over {global_total} samples"
+        )
+    if dist.is_available() and dist.is_initialized():
+        dist.barrier()
+
+    return {
+        "eval/gsm8k_accuracy": acc,
+        "eval/gsm8k_samples": float(global_total),
+    }
 
 def save_checkpoint(config: PretrainConfig, state: TrainState, rank: int, config_dict: Dict[str, Any]) -> None:
     """Save a training checkpoint with model weights and metadata."""
@@ -707,6 +762,9 @@ def train(config: PretrainConfig, device: torch.device, rank: int, world_size: i
             if curr_checkpoint > prev_checkpoint:
                 save_checkpoint(config, state, rank, config.model_dump())
 
+    if config.dataset_name == "gsm8k":
+        run_gsm8k_eval(config, state, device, rank, world_size)
+        
     # Save final checkpoint
     save_checkpoint(config, state, rank, config.model_dump())
 
