@@ -24,7 +24,7 @@ from text_datasets import TextDatasetConfig, create_dataset_loader
 from eval_gsm8k import GSM8KEvaluator
 from models.moeut_layers import SigmaMoE, SwitchHeadCore
 from tokenizer_configs import get_tokenizer_for_dataset
-from generate_asnwers import generate_answers
+from generate_answers import generate_answers
 
 
 class LossConfig(pydantic.BaseModel):
