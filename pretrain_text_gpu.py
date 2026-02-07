@@ -310,8 +310,41 @@ def create_model(config: PretrainConfig, metadata, device: torch.device, world_s
     model = model.to(device)
     
     if config.load_checkpoint:
-        state_dict = torch.load(config.load_checkpoint, map_location="cpu")
-        model.load_state_dict(state_dict, strict=False)
+        print(f"Loading checkpoint from {config.load_checkpoint}...")
+        checkpoint = torch.load(config.load_checkpoint, map_location="cpu")
+        
+        # 1. Estrazione dei pesi dal dizionario del checkpoint
+        if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+            state_dict = checkpoint["model_state_dict"]
+        else:
+            state_dict = checkpoint  # Fallback se è un vecchio formato solo pesi
+
+        # 2. Pulizia e Mappatura delle chiavi (come nel tuo script di inferenza)
+        new_state_dict = {}
+        for key, value in state_dict.items():
+            new_key = key
+            
+            # Rimuove prefisso "module." se il checkpoint era salvato in DDP senza unwrap
+            if new_key.startswith("module."):
+                new_key = new_key[7:]
+            
+            # Rimuove prefisso "_orig_mod." introdotto da torch.compile()
+            if new_key.startswith("_orig_mod."):
+                new_key = new_key[10:]
+
+            # Fix retrocompatibilità (dal tuo script di inferenza)
+            if "L_level.layers." in new_key:
+                new_key = new_key.replace("L_level.layers.", "flat_layers.")
+                
+            new_state_dict[new_key] = value
+
+        # 3. Caricamento effettivo
+        missing, unexpected = model.load_state_dict(new_state_dict, strict=False)
+        if len(missing) > 0:
+            print(f"[WARNING] Missing keys in checkpoint: {len(missing)}")
+        if len(unexpected) > 0:
+            print(f"[WARNING] Unexpected keys in checkpoint: {len(unexpected)}")
+        print("Checkpoint loaded successfully.")
 
     # 1. Setup Optimizers
     optimizers: List[torch.optim.Optimizer] = [
