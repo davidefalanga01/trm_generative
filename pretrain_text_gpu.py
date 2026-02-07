@@ -518,7 +518,7 @@ def run_gsm8k_eval(config: PretrainConfig, state: TrainState, device: torch.devi
     max_new_tokens = 256
     max_samples = 10
 
-    for sample in valset:
+    for sample in val_set:
         completion = generate_answers(
             raw_model, tokenizer, sample["question"],
             max_new_tokens=256,
