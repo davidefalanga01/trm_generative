@@ -80,7 +80,8 @@ class GSM8KDataset(IterableDataset):
         
         # Labels: -100 on prompt tokens, value on answer tokens
         combined_ids = prompt_ids + answer_ids
-        labels = prompt_ids + answer_ids
+        labels[:-1] = combined_ids[1:]
+        labels[-1] = -100
         
         # Padding
         pad_len = self.config.seq_len - len(combined_ids)
