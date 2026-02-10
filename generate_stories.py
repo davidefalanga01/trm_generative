@@ -229,7 +229,7 @@ def main():
 
     args = parser.parse_args()
 
-    prompts = list(DEFAULT_QUESTIONS)
+    prompts = list(DEFAULT_PROMPTS)
     seeds = args.seeds if args.seeds is not None else list(range(len(prompts)))
     if len(seeds) != len(prompts):
         raise ValueError(f"Number of seeds ({len(seeds)}) must match prompts ({len(prompts)})")
